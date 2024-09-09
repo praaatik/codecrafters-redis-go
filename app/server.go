@@ -30,19 +30,14 @@ func main() {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
-	defer l.Close()
 
-	//if os.Args[1] == "--dir" && os.Args[3] == "--dbfilename" {
-	//
-	//	// for k, value := range keys {
-	//	// 	// fmt.Println(k, value)
-	//	// 	fmt.Printf("%d) %s\n", k, value)
-	//	// }
-	//
-	//	if err != nil {
-	//		fmt.Println(err.Error())
-	//	}
-	//}
+	_, err = server.readRDBFile()
+	if err != nil {
+		fmt.Println("Unable to read the RDB file")
+		os.Exit(1)
+	}
+
+	defer l.Close()
 
 	// goroutine to handle the expiry of keys
 	go server.handleExpiry()
@@ -65,7 +60,7 @@ func NewRedisServer() *RedisServer {
 	}
 }
 
-func readRDBFile() (map[string]string, error) {
+func (r *RedisServer) readRDBFile() (map[string]string, error) {
 	file, err := os.Open(fmt.Sprintf("%s/%s", os.Args[2], os.Args[4]))
 	keys := make(map[string]string)
 
@@ -74,12 +69,12 @@ func readRDBFile() (map[string]string, error) {
 		return nil, err
 	}
 
-	r := bufio.NewReader(file)
+	reader := bufio.NewReader(file)
 	stat, _ := file.Stat()
 
 	data := make([]byte, stat.Size())
 
-	_, err = r.Read(data)
+	_, err = reader.Read(data)
 
 	if err != nil {
 		fmt.Println("error reading file -> ", err.Error())
@@ -119,7 +114,19 @@ func readRDBFile() (map[string]string, error) {
 
 			if valueType == 0x00 {
 				key, offset := parseStringEncodedValue(data, offset)
+				fmt.Println("key -> ", key)
+
 				value, offset := parseStringEncodedValue(data, offset)
+				fmt.Println("value -> ", value)
+
+				r.mu.Lock()
+				r.store[key] = value
+				// if expiryDuration > 0 {
+				// 	r.expiry[key] = time.Now().Add(expiryDuration)
+				// } else {
+				// 	delete(r.expiry, key)
+				// }
+				r.mu.Unlock()
 
 				if key != "" && value != "" {
 					keys[key] = value

@@ -75,7 +75,7 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 			return []byte("-ERR wrong number of arguments for 'keys' command\r\n")
 		}
 
-		keys, _ := readRDBFile()
+		keys, _ := r.readRDBFile()
 
 		var keysArray []string
 
