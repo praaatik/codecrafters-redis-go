@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -61,13 +62,21 @@ func NewRedisServer() *RedisServer {
 }
 
 func (r *RedisServer) readRDBFile() (map[string]string, error) {
+	if len(os.Args) < 4 {
+		return nil, errors.New("not enough arguments")
+	}
+
 	file, err := os.Open(fmt.Sprintf("%s/%s", os.Args[2], os.Args[4]))
-	keys := make(map[string]string)
 
 	if err != nil {
-		fmt.Println("error opening file -> ", err.Error())
 		return nil, err
 	}
+	keys := make(map[string]string)
+
+	//if err != nil {
+	//	fmt.Println("error opening file -> ", err.Error())
+	//	return nil, err
+	//}
 
 	reader := bufio.NewReader(file)
 	stat, _ := file.Stat()
