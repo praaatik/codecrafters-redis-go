@@ -86,7 +86,7 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 		response := ""
 		response = response + fmt.Sprintf("*%d\r\n", len(keysArray))
 
-		for index, k := range keysArray {
+		for _, k := range keysArray {
 			response = response + fmt.Sprintf("$%d\r\n%s\r\n", len(k), k)
 		}
 
