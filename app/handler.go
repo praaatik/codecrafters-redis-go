@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +51,25 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 
 	case "GET":
 		return r.handleGetCommand(args)
+
+	case "CONFIG":
+		if args[0].String != "GET" {
+			return []byte("-ERR wrong number of arguments for 'get' command\r\n")
+		}
+
+		if os.Args[1] != "--dir" && os.Args[3] != "--dbfilename" {
+			return []byte("Unable to access directory/db file")
+		}
+
+		if os.Args[2] != "" {
+			return r.handleConfigCommand(os.Args[2], "")
+		}
+
+		if os.Args[4] != "" {
+			return r.handleConfigCommand("", os.Args[4])
+		}
+
+		return r.handleConfigCommand(os.Args[2], os.Args[4])
 
 	default:
 		return []byte("-ERR unknown command\r\n")
@@ -130,4 +150,20 @@ func (r *RedisServer) handleExpiry() {
 		r.mu.Unlock()
 	}
 
+}
+
+func (r *RedisServer) handleConfigCommand(dir, dbFilename string) []byte {
+	response := ""
+
+	if dir != "" {
+		response = fmt.Sprintf("*2\r\n$3\r\ndir\r\n$%d\r\n%s\r\n", len(dir), dir)
+		return []byte(response)
+	}
+
+	if dbFilename != "" {
+		response = fmt.Sprintf("*2\r\n$10\r\ndbfilename\r\n$%d\r\n%s\r\n", len(dbFilename), dbFilename)
+		return []byte(response)
+	}
+
+	return []byte(response)
 }
