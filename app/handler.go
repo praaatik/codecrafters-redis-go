@@ -70,6 +70,27 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 		}
 
 		return r.handleConfigCommand(os.Args[2], os.Args[4])
+	case "KEYS":
+		if args[0].String != "*" {
+			return []byte("-ERR wrong number of arguments for 'keys' command\r\n")
+		}
+
+		keys, _ := readRDBFile()
+
+		var keysArray []string
+
+		for key := range keys {
+			keysArray = append(keysArray, key)
+		}
+
+		response := ""
+		response = response + fmt.Sprintf("*%d\r\n", len(keysArray))
+
+		for index, k := range keysArray {
+			response = response + fmt.Sprintf("$%d\r\n%s\r\n", len(k), k)
+		}
+
+		return []byte(response)
 
 	default:
 		return []byte("-ERR unknown command\r\n")
