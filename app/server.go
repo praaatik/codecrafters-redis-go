@@ -34,7 +34,7 @@ func main() {
 	_, err = server.readRDBFile()
 	if err != nil {
 		fmt.Println("Unable to read the RDB file")
-		os.Exit(1)
+		//os.Exit(1)
 	}
 
 	defer l.Close()
