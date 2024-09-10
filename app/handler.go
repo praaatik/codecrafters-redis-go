@@ -109,10 +109,13 @@ func (r *RedisServer) handleGetCommand(args []RESP) []byte {
 	if expiryTime, exists := r.expiry[key]; exists && time.Now().After(expiryTime) {
 		r.mu.RUnlock()
 		r.mu.Lock()
+
 		delete(r.store, key)
 		delete(r.expiry, key)
+
 		r.mu.Unlock()
 		r.mu.RLock()
+
 		return []byte("$-1\r\n")
 	}
 
