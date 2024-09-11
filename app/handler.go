@@ -52,6 +52,9 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 	case "GET":
 		return r.handleGetCommand(args)
 
+	case "TYPE":
+		return r.handleTypeCommand(args)
+
 	case "CONFIG":
 		if args[0].String != "GET" {
 			return []byte("-ERR wrong number of arguments for 'get' command\r\n")
@@ -96,6 +99,22 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 		return []byte("-ERR unknown command\r\n")
 	}
 }
+
+func (r *RedisServer) handleTypeCommand(args []RESP) []byte {
+	if len(args) != 1 {
+		return []byte("-ERR wrong number of arguments for 'get' command\r\n")
+	}
+
+	key := args[0].String
+
+	_, exists := r.checkKeyExists(key)
+	if exists {
+		// hard coding the value if the key exists for now
+		return []byte("+string\r\n")
+	}
+	return []byte("+none\r\n")
+}
+
 func (r *RedisServer) handleGetCommand(args []RESP) []byte {
 	if len(args) != 1 {
 		return []byte("-ERR wrong number of arguments for 'get' command\r\n")
@@ -119,11 +138,17 @@ func (r *RedisServer) handleGetCommand(args []RESP) []byte {
 		return []byte("$-1\r\n")
 	}
 
-	if value, exists := r.store[key]; exists {
+	value, keyExists := r.checkKeyExists(key)
+	if keyExists {
 		return []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value))
 	}
 
 	return []byte("$-1\r\n")
+}
+
+func (r *RedisServer) checkKeyExists(key string) (string, bool) {
+	value, exists := r.store[key]
+	return value, exists
 }
 
 func (r *RedisServer) handleSetCommand(args []RESP) []byte {
