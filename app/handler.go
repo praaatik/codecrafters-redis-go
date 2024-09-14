@@ -27,7 +27,10 @@ func (r *RedisServer) handleConnection(conn net.Conn) {
 	}
 }
 
+// handleCommand processes incoming Redis commands and dispatches them to the appropriate handler functions.
+// It returns the RESP-formatted response for the command.
 func (r *RedisServer) handleCommand(object RESP) []byte {
+	// check if the command is in a valid format
 	if object.Type != Array || len(object.Array) == 0 {
 		return []byte("-ERR Invalid command format\r\n")
 	}
@@ -51,9 +54,6 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 
 	case "GET":
 		return r.handleGetCommand(args)
-
-	//case "TYPE":
-	//	return r.handleTypeCommand(args)
 
 	case "CONFIG":
 		if args[0].String != "GET" {
@@ -106,7 +106,10 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 	}
 }
 
+// handleTypeCommand processes the TYPE command to determine the type of a key.
+// It returns the type of the key in RESP simple string format.
 func (r *RedisServer) handleTypeCommand(args []RESP) []byte {
+	// len of args are exactly one
 	if len(args) != 1 {
 		return []byte("-ERR wrong number of arguments for 'type' command\r\n")
 	}
@@ -131,12 +134,17 @@ func (r *RedisServer) handleTypeCommand(args []RESP) []byte {
 }
 
 func (r *RedisServer) handleXAddCommand(args []RESP) []byte {
+	// Validate the number of arguments (must be at least 4 and even number of key-value pairs)
 	if len(args) < 4 || len(args)%2 != 0 {
 		return []byte("-ERR wrong number of arguments for 'xadd' command\r\n")
 	}
 
 	key := args[0].String
 	id := args[1].String
+
+	if err := r.validateEntryID(key, id); err != nil {
+		return []byte(err.Error())
+	}
 
 	// Parse key-value pairs
 	keyValues := make(map[string]string)
@@ -147,14 +155,18 @@ func (r *RedisServer) handleXAddCommand(args []RESP) []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// initializing the stream maps if they aren't initialized
 	if r.streams == nil {
 		r.streams = make(map[string][]StreamEntry)
 	}
 
-	// Append the new stream entry
+	response, exists := r.streams[key]
+	fmt.Println(exists)
+	fmt.Println(response)
+
+	// append to the stream
 	r.streams[key] = append(r.streams[key], StreamEntry{ID: id, KeyValues: keyValues})
 
-	// Return the ID as a RESP bulk string
 	return []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(id), id))
 }
 
@@ -258,4 +270,67 @@ func (r *RedisServer) handleConfigCommand(dir, dbFilename string) []byte {
 	}
 
 	return []byte(response)
+}
+
+// validateEntryID validates that the provided ID is greater than the last entry's ID in the stream.
+// Returns an error if the ID is invalid.
+func (r *RedisServer) validateEntryID(streamKey, id string) error {
+	// Minimum valid entry ID
+	minID := "0-0"
+
+	// Check if the stream exists
+	r.mu.RLock()
+	entries, exists := r.streams[streamKey]
+	r.mu.RUnlock()
+
+	if !exists {
+		return nil // If the stream doesn't exist, any valid ID is acceptable
+	}
+
+	// Parse the provided ID
+	idTime, idSeq, err := parseEntryID(id)
+	if err != nil {
+		return fmt.Errorf("-ERR The ID specified in XADD is invalid\r\n")
+	}
+
+	// Validate against the last entry's ID
+	r.mu.RLock()
+	lastEntry := entries[len(entries)-1]
+	r.mu.RUnlock()
+
+	lastIDTime, lastIDSeq, err := parseEntryID(lastEntry.ID)
+	if err != nil {
+		return fmt.Errorf("-ERR The last entry ID is invalid\r\n")
+	}
+
+	if id == minID {
+		return fmt.Errorf("-ERR The ID specified in XADD must be greater than 0-0\r\n")
+	}
+
+	if idTime < lastIDTime || (idTime == lastIDTime && idSeq <= lastIDSeq) {
+		return fmt.Errorf("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n")
+	}
+
+	return nil
+}
+
+// parseEntryID parses an entry ID into its time and sequence number components.
+func parseEntryID(id string) (int64, int, error) {
+	parts := strings.Split(id, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid ID format")
+	}
+
+	timePart, seqPart := parts[0], parts[1]
+	idTime, err := strconv.ParseInt(timePart, 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	idSeq, err := strconv.Atoi(seqPart)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return idTime, idSeq, nil
 }
