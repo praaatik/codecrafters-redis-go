@@ -13,7 +13,14 @@ type RESP struct {
 }
 
 type RedisServer struct {
-	store  map[string]string
+	store   map[string]string
+	streams map[string][]StreamEntry
+
 	expiry map[string]time.Time
 	mu     sync.RWMutex
+}
+
+type StreamEntry struct {
+	ID        string
+	KeyValues map[string]string
 }

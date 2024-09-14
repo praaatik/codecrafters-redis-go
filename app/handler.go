@@ -52,8 +52,8 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 	case "GET":
 		return r.handleGetCommand(args)
 
-	case "TYPE":
-		return r.handleTypeCommand(args)
+	//case "TYPE":
+	//	return r.handleTypeCommand(args)
 
 	case "CONFIG":
 		if args[0].String != "GET" {
@@ -95,6 +95,12 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 
 		return []byte(response)
 
+	case "XADD":
+		return r.handleXAddCommand(args)
+
+	case "TYPE":
+		return r.handleTypeCommand(args)
+
 	default:
 		return []byte("-ERR unknown command\r\n")
 	}
@@ -102,17 +108,54 @@ func (r *RedisServer) handleCommand(object RESP) []byte {
 
 func (r *RedisServer) handleTypeCommand(args []RESP) []byte {
 	if len(args) != 1 {
-		return []byte("-ERR wrong number of arguments for 'get' command\r\n")
+		return []byte("-ERR wrong number of arguments for 'type' command\r\n")
 	}
 
 	key := args[0].String
 
-	_, exists := r.checkKeyExists(key)
-	if exists {
-		// hard coding the value if the key exists for now
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Check if the key is a stream
+	if _, isStream := r.streams[key]; isStream {
+		return []byte("+stream\r\n")
+	}
+
+	// Check if the key is a string (existing functionality)
+	_, isString := r.store[key]
+	if isString {
 		return []byte("+string\r\n")
 	}
+
 	return []byte("+none\r\n")
+}
+
+func (r *RedisServer) handleXAddCommand(args []RESP) []byte {
+	if len(args) < 4 || len(args)%2 != 0 {
+		return []byte("-ERR wrong number of arguments for 'xadd' command\r\n")
+	}
+
+	key := args[0].String
+	id := args[1].String
+
+	// Parse key-value pairs
+	keyValues := make(map[string]string)
+	for i := 2; i < len(args); i += 2 {
+		keyValues[args[i].String] = args[i+1].String
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.streams == nil {
+		r.streams = make(map[string][]StreamEntry)
+	}
+
+	// Append the new stream entry
+	r.streams[key] = append(r.streams[key], StreamEntry{ID: id, KeyValues: keyValues})
+
+	// Return the ID as a RESP bulk string
+	return []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(id), id))
 }
 
 func (r *RedisServer) handleGetCommand(args []RESP) []byte {
