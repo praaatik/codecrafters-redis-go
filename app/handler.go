@@ -142,8 +142,12 @@ func (r *RedisServer) handleXAddCommand(args []RESP) []byte {
 	key := args[0].String
 	id := args[1].String
 
-	if err := r.validateEntryID(key, id); err != nil {
-		return []byte(err.Error())
+	if strings.Contains(id, "*") {
+		id = r.autoGenerateID(key, id)
+	} else {
+		if err := r.validateEntryID(key, id); err != nil {
+			return []byte(err.Error())
+		}
 	}
 
 	// Parse key-value pairs
@@ -315,22 +319,56 @@ func (r *RedisServer) validateEntryID(streamKey, id string) error {
 }
 
 // parseEntryID parses an entry ID into its time and sequence number components.
-func parseEntryID(id string) (int64, int, error) {
+func parseEntryID(id string) (string, int, error) {
 	parts := strings.Split(id, "-")
 	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("invalid ID format")
+		return "", 0, fmt.Errorf("invalid ID format")
 	}
 
 	timePart, seqPart := parts[0], parts[1]
-	idTime, err := strconv.ParseInt(timePart, 10, 64)
-	if err != nil {
-		return 0, 0, err
-	}
-
 	idSeq, err := strconv.Atoi(seqPart)
 	if err != nil {
-		return 0, 0, err
+		return "", 0, err
 	}
 
-	return idTime, idSeq, nil
+	return timePart, idSeq, nil
+}
+
+// autoGenerateID generates a new entry ID with an auto-incremented sequence number.
+// It takes the stream key and the ID template (e.g., "5-*") as input.
+func (r *RedisServer) autoGenerateID(streamKey, idTemplate string) string {
+	// Parse the ID template
+	parts := strings.Split(idTemplate, "-")
+	if len(parts) != 2 {
+		return "ERR Invalid ID format\r\n"
+	}
+
+	timePart := parts[0]
+	var sequenceNumber int
+
+	// Default sequence number is 0, except when timePart is 0
+	if timePart == "0" {
+		sequenceNumber = 1
+	} else {
+		sequenceNumber = 0
+	}
+
+	// Check if the stream exists
+	r.mu.RLock()
+	entries, exists := r.streams[streamKey]
+	r.mu.RUnlock()
+
+	if exists {
+		// Find the last entry with the same time part
+		for i := len(entries) - 1; i >= 0; i-- {
+			entry := entries[i]
+			entryTimePart, entrySeqPart, _ := parseEntryID(entry.ID)
+			if entryTimePart == timePart {
+				sequenceNumber = entrySeqPart + 1
+				break
+			}
+		}
+	}
+
+	return fmt.Sprintf("%s-%d", timePart, sequenceNumber)
 }
